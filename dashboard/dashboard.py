@@ -81,7 +81,7 @@ st.markdown("""
 # =========================
 @st.cache_data
 def load_data():
-    df = pd.read_csv('data/combined_data.csv')
+    df = pd.read_csv('dashboard/combined_data.csv')
     # Buat kolom date dari kolom year, month, day, hour
     df['date'] = pd.to_datetime(df[['year','month','day','hour']])
     return df

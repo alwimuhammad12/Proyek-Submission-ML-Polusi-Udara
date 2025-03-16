@@ -7,3 +7,5 @@ plotly==6.0.0
 folium==0.17.0
 streamlit_folium==0.24.0
 scikit-learn==1.5.2
+XlsxWriter==3.2.2
+pillow==10.4.0

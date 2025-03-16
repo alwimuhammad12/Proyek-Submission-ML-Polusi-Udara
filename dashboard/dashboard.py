@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import folium
 import xlsxwriter
+import statsmodels.api as sm
 from datetime import datetime
 from streamlit_folium import st_folium
 from PIL import Image
@@ -185,24 +186,30 @@ elif page == "Metrik Utama":
 elif page == "Tren & Visualisasi":
     st.title("📊 Tren & Visualisasi Polusi")
 
+    # ➕ Deskripsi halaman
     st.markdown("""
-        Analisis tren jangka panjang dan distribusi polusi udara **PM2.5** & **PM10** berdasarkan **stasiun pemantauan** dan **tahun** yang dipilih.
-        Anda juga dapat mengunduh data untuk kebutuhan analisis lanjutan.
+    Analisis tren dan distribusi **PM2.5** & **PM10** berdasarkan **stasiun** dan **tahun** pilihan Anda.
     """)
 
+    # ➕ Tambahkan opsi "Semua Stasiun"
     stations = df['station'].unique().tolist()
-    stasiun_pilihan = st.sidebar.selectbox("Pilih Stasiun:", stations)
+    stations.insert(0, 'Semua Stasiun')  # Tambahkan opsi di awal list
 
+    stasiun_pilihan = st.sidebar.selectbox("Pilih Stasiun:", stations)
     tahun_tersedia = sorted(df['year'].unique())
     tahun_pilihan = st.sidebar.selectbox("Pilih Tahun:", tahun_tersedia)
 
-    df_filtered = df[(df['station'] == stasiun_pilihan) & (df['year'] == tahun_pilihan)].copy()
+    # ➕ Filter dataframe berdasarkan input user
+    if stasiun_pilihan == 'Semua Stasiun':
+        df_filtered = df[df['year'] == tahun_pilihan].copy()
+    else:
+        df_filtered = df[(df['station'] == stasiun_pilihan) & (df['year'] == tahun_pilihan)].copy()
 
     if df_filtered.empty:
-        st.warning("Data tidak tersedia untuk stasiun dan tahun yang dipilih.")
+        st.warning("Data kosong untuk pilihan ini.")
     else:
         st.subheader(f"Distribusi PM2.5 & PM10 - {stasiun_pilihan} ({tahun_pilihan})")
-
+        
         col1, col2 = st.columns(2)
 
         with col1:
@@ -217,96 +224,65 @@ elif page == "Tren & Visualisasi":
             ax.set_title("Distribusi PM10")
             st.pyplot(fig)
 
-        st.subheader("⬇️ Unduh Data Distribusi PM2.5 & PM10")
-        st.markdown(f"""
-            Klik tombol berikut untuk mengunduh data distribusi **PM2.5** dan **PM10** dari **{stasiun_pilihan}** pada tahun **{tahun_pilihan}**.
-        """)
-
-        df_download = df_filtered[['PM2.5', 'PM10']].dropna()
-
-        import io
-        csv_buffer = io.BytesIO()
-        df_download.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
-
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv_buffer,
-            file_name=f'Distribusi_PM25_PM10_{stasiun_pilihan}_{tahun_pilihan}.csv',
-            mime='text/csv'
-        )
-
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-            df_download.to_excel(writer, index=False, sheet_name='Distribusi_PM')
-
-        excel_buffer.seek(0)
-
-        st.download_button(
-            label="📥 Download Excel",
-            data=excel_buffer,
-            file_name=f'Distribusi_PM25_PM10_{stasiun_pilihan}_{tahun_pilihan}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-
+        # ➕ Tren Bulanan PM2.5 & PM10
         st.subheader("📈 Tren Bulanan PM2.5 & PM10")
-        st.markdown(f"""
-            Grafik di bawah ini menunjukkan **rata-rata bulanan PM2.5 dan PM10** di **{stasiun_pilihan}** selama tahun **{tahun_pilihan}**.
-            Data ini membantu mengidentifikasi bulan-bulan dengan tingkat polusi tinggi.
-        """)
-
         df_filtered['date'] = pd.to_datetime(df_filtered[['year', 'month', 'day', 'hour']])
         df_filtered.set_index('date', inplace=True)
 
         monthly_trend = df_filtered.resample('M').mean(numeric_only=True)
-
         st.line_chart(monthly_trend[['PM2.5', 'PM10']])
 
         df_filtered.reset_index(inplace=True)
+
 
 # =========================
 # HALAMAN: FAKTOR CUACA
 # =========================
 elif page == "Faktor Cuaca":
-    st.title("🌤️ Faktor Cuaca & Polusi Udara")
+    st.title("🌦️ Pengaruh Faktor Cuaca terhadap Polusi")
 
+    # ➕ Deskripsi halaman
     st.markdown("""
-        Halaman ini menganalisis **hubungan antara faktor cuaca** seperti **suhu (TEMP)** dan **kecepatan angin (WSPM)** terhadap **tingkat polusi udara PM2.5** di Beijing.
-
-        📊 Dengan visualisasi **scatter plot**, kamu bisa mengamati apakah ada korelasi atau pola yang konsisten antara cuaca dan kualitas udara.
+    Halaman ini menyajikan hubungan antara faktor cuaca dan tingkat polusi PM2.5 serta PM10.  
     """)
 
+    # ➕ Tambahkan opsi "Semua Stasiun"
     stations = df['station'].unique().tolist()
-    stasiun_pilihan = st.sidebar.selectbox("Pilih Stasiun:", stations, key="faktor_cuaca_stasiun")
+    stations.insert(0, 'Semua Stasiun')
 
-    df_filtered = df[df['station'] == stasiun_pilihan].copy()
+    stasiun_pilihan = st.sidebar.selectbox("Pilih Stasiun:", stations, key='cuaca')
+    tahun_tersedia = sorted(df['year'].unique())
+    tahun_pilihan = st.sidebar.selectbox("Pilih Tahun:", tahun_tersedia, key='cuaca_tahun')
+
+    # ➕ Filter data
+    if stasiun_pilihan == 'Semua Stasiun':
+        df_filtered = df[df['year'] == tahun_pilihan].copy()
+    else:
+        df_filtered = df[(df['station'] == stasiun_pilihan) & (df['year'] == tahun_pilihan)].copy()
+
+    faktor_cuaca = ['TEMP', 'PRES', 'DEWP', 'RAIN', 'WSPM']
+    polutan = ['PM2.5', 'PM10']
 
     if df_filtered.empty:
-        st.warning("Data tidak tersedia untuk stasiun yang dipilih.")
+        st.warning("Data tidak tersedia untuk pilihan ini.")
     else:
-        st.subheader(f"Hubungan PM2.5 dengan Suhu dan Kecepatan Angin - {stasiun_pilihan}")
+        st.subheader("Heatmap Korelasi Faktor Cuaca & Polusi")
+        corr_df = df_filtered[polutan + faktor_cuaca].corr()
 
-        col1, col2 = st.columns(2)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sns.heatmap(corr_df, annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
+        ax.set_title(f"Korelasi Polusi & Faktor Cuaca - {stasiun_pilihan} ({tahun_pilihan})")
+        st.pyplot(fig)
 
-        with col1:
-            fig = px.scatter(df_filtered, x='TEMP', y='PM2.5',
-                             trendline="ols",
-                             labels={"TEMP": "Suhu (°C)", "PM2.5": "PM2.5 (µg/m³)"},
-                             title=f"PM2.5 vs Suhu ({stasiun_pilihan})")
-            st.plotly_chart(fig)
-
-        with col2:
-            fig = px.scatter(df_filtered, x='WSPM', y='PM2.5',
-                             trendline="ols",
-                             labels={"WSPM": "Kecepatan Angin (m/s)", "PM2.5": "PM2.5 (µg/m³)"},
-                             title=f"PM2.5 vs Kecepatan Angin ({stasiun_pilihan})")
-            st.plotly_chart(fig)
-
+        st.subheader("Scatterplot TEMP vs PM2.5")
         st.markdown("""
-            ✅ **Insight Awal**:
-            - Perhatikan apakah **peningkatan kecepatan angin** berhubungan dengan **penurunan konsentrasi PM2.5**.
-            - Lihat apakah **suhu ekstrem** (tinggi/rendah) mempengaruhi peningkatan polusi udara.
+            Scatterplot berikut menunjukkan hubungan suhu udara (TEMP) terhadap tingkat polusi PM2.5.
         """)
+        fig, ax = plt.subplots()
+        sns.scatterplot(x='TEMP', y='PM2.5', data=df_filtered, alpha=0.5)
+        ax.set_title(f"Suhu vs PM2.5 - {stasiun_pilihan} ({tahun_pilihan})")
+        st.pyplot(fig)
+
 
 # =========================
 # HALAMAN: PETA GEOSPASIAL
@@ -461,18 +437,31 @@ elif page == "Analisis Lanjutan":
     df_cluster = df[['PM2.5', 'PM10', 'TEMP', 'WSPM']].dropna().copy()
 
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df_cluster)
+    data_scaled = scaler.fit_transform(df_cluster[['PM2.5', 'PM10']])
 
     kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-    df['Cluster'] = kmeans.fit_predict(df_scaled)
+
+    # Tambahkan hasil cluster KE df_cluster
+    df_cluster['Cluster'] = kmeans.fit_predict(data_scaled)
+
+    # Tambahkan Cluster ke df utama
+    df['Cluster'] = np.nan
+    df.loc[df_cluster.index, 'Cluster'] = df_cluster['Cluster']
+
+    print(df_cluster.head()) 
 
     st.subheader("Distribusi Data Berdasarkan Cluster")
 
-    fig = px.scatter_3d(df, x='PM2.5', y='PM10', z='TEMP',
-                        color=df['Cluster'].astype(str),
-                        labels={"PM2.5": "PM2.5 (µg/m³)", "PM10": "PM10 (µg/m³)", "TEMP": "Suhu (°C)"},
-                        title="Klaster Polusi Udara (3D Scatter)")
-    st.plotly_chart(fig)
+    fig_cluster = px.scatter(
+        df_cluster,
+        x='PM2.5',
+        y='PM10',
+        color=df_cluster['Cluster'].astype(str),  # gunakan string buat kategori warna
+        title='Distribusi Data Berdasarkan Cluster '
+    )
+
+    fig_cluster.update_traces(marker=dict(size=8))
+    st.plotly_chart(fig_cluster, use_container_width=True)
 
     st.markdown("""
         ✅ **Penjelasan Cluster**:
@@ -486,12 +475,13 @@ elif page == "Analisis Lanjutan":
     st.subheader("Rata-rata Fitur di Setiap Cluster")
 
     df_clustered_avg = df.groupby('Cluster').agg({
-        'PM2.5': 'mean',
-        'PM10': 'mean',
-        'TEMP': 'mean',
-        'WSPM': 'mean'
+    'PM2.5': 'mean',
+    'PM10': 'mean',
+    'TEMP': 'mean',
+    'WSPM': 'mean'
     }).reset_index()
 
+    
     st.dataframe(df_clustered_avg)
 
     st.markdown("""
